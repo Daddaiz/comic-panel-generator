@@ -263,19 +263,16 @@ function buildSettingsHtml() {
                             <option value="1792x1024">1792x1024 (landscape)</option>
                             <option value="512x512">512x512 (fast)</option>
                         </select>
-                        <span style="font-size:0.8em; opacity:0.75;">(auto-updates based on the chosen model, when available)</span>
                     </div>
 
                     <div class="cpg-row">
                         <label for="cpg_steps">Steps</label>
                         <input id="cpg_steps" type="number" min="1" max="50" step="1" value="${QWEN_INFERENCE_STEPS}" />
-                        <span style="font-size:0.8em; opacity:0.75;">Auto-filled from the selected model's own default/range (like NanoGPT's own UI).</span>
                     </div>
 
                     <div class="cpg-row">
                         <label for="cpg_cfg">CFG Scale</label>
                         <input id="cpg_cfg" type="number" min="1" max="20" step="0.5" value="${QWEN_GUIDANCE_SCALE}" />
-                        <span style="font-size:0.8em; opacity:0.75;">Also auto-filled per model, remembered separately for each one.</span>
                     </div>
                 </details>
 
