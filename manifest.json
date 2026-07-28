@@ -1,0 +1,15 @@
+{
+  "display_name": "Comic Panel Generator",
+  "name": "comic-panel-generator",
+  "description": "Generates a comic (grid of panels) from the last chat message, using the connected LLM for the storyboard and the NanoGPT image API for each panel.",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Custom Extension",
+  "version": "4.20.0",
+  "homePage": "",
+  "auto_update": false,
+  "generate_interceptor": ""
+}

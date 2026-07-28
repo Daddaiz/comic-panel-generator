@@ -1,0 +1,615 @@
+/* ===== Comic Panel Generator - styles ===== */
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Permanent+Marker&family=Baloo+2:wght@600;800&display=swap');
+
+.cpg-buttons button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+#comic_panel_generator_settings .cpg-group {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    padding: 0 10px;
+}
+
+#comic_panel_generator_settings .cpg-group[open] {
+    padding-bottom: 10px;
+}
+
+#comic_panel_generator_settings .cpg-group summary {
+    cursor: pointer;
+    font-weight: 700;
+    padding: 8px 2px;
+    list-style: none;
+    user-select: none;
+}
+
+#comic_panel_generator_settings .cpg-group summary::-webkit-details-marker {
+    display: none;
+}
+
+#comic_panel_generator_settings .cpg-group summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: 6px;
+    transition: transform 0.15s ease;
+}
+
+#comic_panel_generator_settings .cpg-group[open] summary::before {
+    transform: rotate(90deg);
+}
+
+#comic_panel_generator_settings .cpg-group summary:hover {
+    opacity: 0.85;
+}
+
+.cpg-review-panel {
+    margin-bottom: 12px;
+}
+
+.cpg-review-panel label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82em;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.cpg-review-textarea {
+    width: 100%;
+    min-height: 70px;
+    resize: vertical;
+    font-family: inherit;
+    font-size: 0.82em;
+    padding: 6px 8px;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+.cpg-review-badge {
+    font-size: 0.85em;
+    font-weight: 400;
+    color: #e0a030;
+    cursor: help;
+}
+
+#comic_panel_generator_settings .cpg-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+}
+
+#comic_panel_generator_settings .cpg-row label {
+    min-width: 150px;
+    font-weight: 600;
+}
+
+#comic_panel_generator_settings input[type="text"],
+#comic_panel_generator_settings input[type="password"],
+#comic_panel_generator_settings select,
+#comic_panel_generator_settings textarea {
+    flex: 1;
+    min-width: 180px;
+}
+
+#comic_panel_generator_settings textarea {
+    min-height: 60px;
+    resize: vertical;
+}
+
+#comic_panel_generator_settings .cpg-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+#comic_panel_generator_settings .cpg-status {
+    margin-top: 8px;
+    font-size: 0.9em;
+    opacity: 0.85;
+    white-space: pre-wrap;
+}
+
+/* ===== Reference image list in the settings panel ===== */
+
+.cpg-ref-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+.cpg-ref-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78em;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    padding: 3px 6px;
+}
+
+.cpg-ref-item img {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+    border-radius: 4px;
+    flex-shrink: 0;
+}
+
+.cpg-ref-url {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.8;
+}
+
+.cpg-ref-remove {
+    cursor: pointer;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+.cpg-ref-remove:hover {
+    opacity: 1;
+    color: #ff8080;
+}
+
+.cpg-ref-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.cpg-ref-preview-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 84px;
+    text-align: center;
+}
+
+.cpg-ref-preview-item img {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 2px solid #444;
+}
+
+.cpg-ref-preview-item span {
+    font-size: 0.68em;
+    opacity: 0.85;
+    line-height: 1.2;
+    word-break: break-word;
+}
+
+/* ===== Overlay / lightbox ===== */
+
+.cpg-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.cpg-modal {
+    background: var(--SmartThemeBlurTintColor, #1e1e1e);
+    color: var(--SmartThemeBodyColor, #eee);
+    border-radius: 10px;
+    max-width: 1150px;
+    width: 100%;
+    max-height: 92vh;
+    overflow-y: auto;
+    padding: 20px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.cpg-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.cpg-modal-header h3 {
+    margin: 0;
+}
+
+.cpg-close-btn {
+    cursor: pointer;
+    font-size: 1.4em;
+    line-height: 1;
+    padding: 0 6px;
+    opacity: 0.7;
+}
+
+.cpg-close-btn:hover {
+    opacity: 1;
+}
+
+/* Comic "page": paper-like background, outer frame, so that when we
+   export it as a single image it really looks like a comic page */
+.cpg-page {
+    background: #0d0d0d;
+    border: 6px solid #000;
+    border-radius: 4px;
+    padding: 14px;
+    margin-bottom: 14px;
+}
+
+.cpg-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.cpg-panel {
+    border: 4px solid #000;
+    border-radius: 3px;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    transform: rotate(var(--cpg-tilt, 0deg));
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+
+.cpg-panel img {
+    width: 100%;
+    height: auto;
+    display: block;
+    aspect-ratio: 1 / 1;
+    object-fit: cover;
+    background: #222;
+}
+
+.cpg-panel .cpg-caption {
+    font-size: 0.72em;
+    padding: 5px 7px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #ddd;
+}
+
+.cpg-translation-badge {
+    display: block;
+    font-size: 0.62em;
+    padding: 3px 7px;
+    background: rgba(180, 90, 0, 0.85);
+    color: #fff;
+    cursor: help;
+}
+
+/* Applied to the whole comic page only for the duration of exporting/
+   inserting into chat (see exportComicAsSingleImage): hides every editing
+   tool so the final image contains only the artwork and the speech/
+   thought balloons themselves — no panel numbers, buttons, or balloon
+   handles. Removed again right after the capture finishes. */
+.cpg-page.cpg-exporting .cpg-panel-controls,
+.cpg-page.cpg-exporting .cpg-caption,
+.cpg-page.cpg-exporting .cpg-translation-badge,
+.cpg-page.cpg-exporting .cpg-bubble-delete,
+.cpg-page.cpg-exporting .cpg-bubble-resize-handle,
+.cpg-page.cpg-exporting .cpg-bubble-speaker {
+    display: none !important;
+}
+
+.cpg-panel-controls {
+    position: absolute;
+    bottom: 5px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    z-index: 3;
+}
+
+.cpg-panel-controls .cpg-panel-number {
+    background: #fff;
+    color: #000;
+    font-weight: 800;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6em;
+    border: 1.5px solid #000;
+    flex-shrink: 0;
+}
+
+.cpg-panel-controls .cpg-download {
+    background: rgba(255, 255, 255, 0.85);
+    color: #000;
+    border: 1.5px solid #000;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.68em;
+    line-height: 1.4;
+    text-decoration: none;
+    flex-shrink: 0;
+}
+
+.cpg-panel-controls .cpg-retry-btn {
+    position: static;
+    background: rgba(255, 255, 255, 0.85);
+    color: #000;
+    border: 1.5px solid #000;
+    border-radius: 50%;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6em;
+    cursor: pointer;
+    padding: 0;
+    flex-shrink: 0;
+}
+
+.cpg-panel-controls .cpg-retry-btn:hover {
+    background: #fff;
+    transform: scale(1.1);
+}
+
+.cpg-error-text {
+    white-space: pre-wrap;
+}
+
+.cpg-panel.cpg-loading {
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    color: #aaa;
+    font-size: 0.85em;
+}
+
+.cpg-panel.cpg-error {
+    align-items: center;
+    justify-content: center;
+    min-height: 180px;
+    color: #ff8080;
+    font-size: 0.8em;
+    padding: 10px;
+    text-align: center;
+}
+
+/* ===== Speech balloons ===== */
+
+.cpg-bubbles-layer {
+    position: absolute;
+    inset: 0;
+    /* Balloons themselves need pointer events for dragging; the layer
+       itself stays click-through everywhere else. */
+    pointer-events: none;
+    z-index: 2;
+}
+
+.cpg-bubble {
+    position: absolute;
+    max-width: 40%;
+    padding: 6px 10px;
+    font-size: 0.68em;
+    line-height: 1.2;
+    color: #000;
+    background: var(--cpg-bubble-bg, #fff);
+    box-shadow: 1px 2px 3px rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
+    cursor: grab;
+    user-select: none;
+    /* Needed because we lock in an explicit width/height via JS (measured
+       with getBoundingClientRect, which is border-box) once the balloon
+       first renders — border-box keeps that measurement consistent with
+       padding/border included, instead of silently growing past it. */
+    box-sizing: border-box;
+}
+
+.cpg-bubble:active {
+    cursor: grabbing;
+}
+
+.cpg-bubble-resize-handle {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+    height: 14px;
+    cursor: nwse-resize;
+    background:
+        linear-gradient(135deg, transparent 0 40%, #000 40% 55%, transparent 55% 65%, #000 65% 80%, transparent 80%);
+    opacity: 0.55;
+    z-index: 4;
+}
+.cpg-bubble-resize-handle:hover {
+    opacity: 1;
+}
+
+.cpg-bubble-delete {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #e33;
+    color: #fff;
+    border: 1.5px solid #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.55em;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 5;
+    opacity: 0.85;
+}
+.cpg-bubble-delete:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+.cpg-bubble-content {
+    position: relative;
+    z-index: 4;
+    cursor: text;
+}
+.cpg-bubble-content[contenteditable="true"] {
+    outline: 2px dashed #333;
+    outline-offset: 2px;
+    cursor: text;
+}
+
+.cpg-bubble-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #2ecc71;
+    color: #fff;
+    border: 1.5px solid #000;
+    font-size: 0.7em;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.cpg-bubble-add:hover {
+    opacity: 0.85;
+}
+
+.cpg-bubble-speaker {
+    position: absolute;
+    top: -18px;
+    left: 4px;
+    font-weight: 800;
+    font-size: 0.6em;
+    text-transform: uppercase;
+    opacity: 0.85;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+    cursor: grab;
+    z-index: 4;
+}
+.cpg-bubble-speaker:active {
+    cursor: grabbing;
+}
+
+/* --- SPEECH: oval balloon, freely draggable, with a separately
+   draggable tail (real DOM element, not a pseudo-element — so it can
+   be grabbed and rotated directly by the person). --- */
+.cpg-bubble-speech {
+    border-radius: 46% / 60%;
+    padding: 9px 14px;
+}
+
+/* Position (left/top, in px) and rotation are set dynamically by JS —
+   see updateTailAnchor() — so the attachment point can slide around the
+   bubble's own perimeter to match whichever direction it's pointing. */
+.cpg-bubble-tail-wrap {
+    position: absolute;
+    width: 0;
+    height: 0;
+    transform-origin: 0 0;
+    cursor: grab;
+    z-index: 3;
+}
+.cpg-bubble-tail-wrap:active {
+    cursor: grabbing;
+}
+/* Two stacked triangles (black outline behind, background-colored fill
+   in front) fake a bordered tail without relying on `filter`, which
+   isn't reliably captured when exporting the comic as a single image. */
+/* Previously a black outline layer sat behind this to fake a border,
+   matching the bubble's own border — now that bubbles have no border,
+   this is hidden so only the plain fill triangle remains. */
+.cpg-bubble-tail-outline {
+    display: none;
+}
+.cpg-bubble-tail-fill {
+    position: absolute;
+    left: -10px;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 22px solid var(--cpg-bubble-bg, #fff);
+}
+
+/* --- THOUGHT: rounded-square balloon, freely draggable, no tail --- */
+.cpg-bubble-thought {
+    border-radius: 16px;
+    font-style: italic;
+}
+
+/* --- GENERIC variant: "Bangers" font, typical of classic comics --- */
+.cpg-style-generico .cpg-bubble {
+    font-family: 'Bangers', 'Comic Sans MS', cursive;
+    font-size: 0.85em;
+    letter-spacing: 0.3px;
+}
+.cpg-style-generico .cpg-caption {
+    font-family: 'Bangers', cursive;
+    letter-spacing: 0.5px;
+}
+
+/* --- MANGA variant: colorful anime/manga style, bold font --- */
+.cpg-style-manga .cpg-bubble {
+    font-family: 'Permanent Marker', cursive;
+    font-size: 0.78em;
+}
+.cpg-style-manga .cpg-bubble-speaker {
+    font-family: 'Permanent Marker', cursive;
+    opacity: 0.6;
+}
+.cpg-style-manga .cpg-panel {
+    border-color: #000;
+}
+.cpg-style-manga .cpg-page {
+    background: #050505;
+}
+
+/* --- DISNEY variant: rounded pastel balloon, soft font --- */
+.cpg-style-disney {
+    --cpg-bubble-bg: #fffdf3;
+}
+.cpg-style-disney .cpg-bubble {
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 600;
+    border-color: #444;
+}
+.cpg-style-disney .cpg-bubble-speaker {
+    font-family: 'Baloo 2', sans-serif;
+    font-weight: 800;
+    color: #b5502f;
+    opacity: 1;
+}
+.cpg-style-disney .cpg-panel {
+    border-color: #6b4a2b;
+}
+.cpg-style-disney .cpg-page {
+    background: #201607;
+    border-color: #6b4a2b;
+}
+.cpg-style-disney .cpg-caption {
+    font-family: 'Baloo 2', sans-serif;
+}
