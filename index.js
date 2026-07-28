@@ -3382,11 +3382,34 @@ async function onGenerateClick() {
             refSummary.innerHTML = allRefs
                 .map((url, i) => {
                     const isFirstPanelRef = i === firstPanelRefIndex;
-                    const idAttr = isFirstPanelRef ? ` id="cpg_ref_summary_first_panel"` : "";
-                    const title = isFirstPanelRef ? "This conversation's permanent first-panel reference — updates automatically if you regenerate panel 1" : `Reference image ${i + 1} used for this comic`;
-                    return `<img src="${url}" class="cpg-ref-summary-thumb"${idAttr} title="${escapeHtml(title)}" alt="Reference ${i + 1}" />`;
+                    if (!isFirstPanelRef) {
+                        return `<img src="${url}" class="cpg-ref-summary-thumb" title="Reference image ${i + 1} used for this comic" alt="Reference ${i + 1}" />`;
+                    }
+                    // The permanent first-panel-of-conversation reference gets its
+                    // own wrapper with a small "forget" button right on it — this
+                    // is the one that otherwise stays the same image across every
+                    // future comic generated in this chat, so it's the one worth
+                    // being able to clear without digging into settings.
+                    return `<span class="cpg-ref-summary-item" id="cpg_ref_summary_first_panel_wrap">
+                                <img src="${url}" class="cpg-ref-summary-thumb" id="cpg_ref_summary_first_panel" title="This conversation's permanent first-panel reference — updates automatically if you regenerate panel 1" alt="Reference ${i + 1}" />
+                                <span class="cpg-ref-summary-remove" id="cpg_ref_summary_first_panel_remove" title="Forget this conversation's permanent first-panel reference — the next panel 1 you generate (or regenerate) will become the new one">🗑️</span>
+                            </span>`;
                 })
                 .join("");
+
+            const removeBtn = document.getElementById("cpg_ref_summary_first_panel_remove");
+            if (removeBtn) {
+                removeBtn.addEventListener("click", () => {
+                    const chatId = getCurrentChatIdentifier();
+                    if (s.firstReferenceByChat && s.firstReferenceByChat[chatId]) {
+                        delete s.firstReferenceByChat[chatId];
+                        saveSettingsDebounced();
+                    }
+                    const wrap = document.getElementById("cpg_ref_summary_first_panel_wrap");
+                    if (wrap) wrap.remove();
+                    notify("success", "Forgot this conversation's first-panel reference — panel 1's next (re)generation will set a new one.");
+                });
+            }
         }
     }
 
