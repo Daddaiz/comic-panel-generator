@@ -2505,6 +2505,7 @@ function openOverlay(numPanels, comicStyle) {
             <div class="cpg-buttons">
                 <button id="cpg_insert_now_btn" class="menu_button" disabled title="Available once all panels have finished generating">📩 Insert</button>
                 <button id="cpg_export_btn" class="menu_button" disabled title="Available once all panels have finished generating">💾 Export</button>
+                <div id="cpg_ref_summary" class="cpg-ref-summary"></div>
             </div>
             <div id="cpg_export_status" class="cpg-status"></div>
         </div>
@@ -2861,6 +2862,23 @@ function attachRetryButton(panelEl, index, panels, results, references, promptIn
         panelEl.className = "cpg-panel cpg-loading";
         panelEl.textContent = `Regenerating panel ${index + 1}...`;
         await generateAndRenderPanel(panelEl, index, panels, results, references, promptInfos, negativePromptOverride);
+
+        // If this is the first panel and it's serving as this conversation's
+        // permanent reference anchor, a retry replaces the OLD image on
+        // screen with a new one — so the stored reference needs to follow
+        // suit, or it would keep pointing at an image that no longer
+        // matches what's actually shown.
+        const s = settings();
+        if (index === 0 && s.useFirstPanelAsReference && results[index] && results[index].url) {
+            const chatId = getCurrentChatIdentifier();
+            const prepared = await prepareGeneratedImageAsReference(results[index].url, "the regenerated first panel");
+            if (prepared) {
+                if (!s.firstReferenceByChat) s.firstReferenceByChat = {};
+                s.firstReferenceByChat[chatId] = prepared;
+                saveSettingsDebounced();
+                console.log(`[Comic Panel Generator] First-panel reference for this conversation updated to the regenerated image (chat: "${chatId}").`);
+            }
+        }
     });
     const controls = panelEl.querySelector(".cpg-panel-controls");
     if (controls) {
@@ -3181,6 +3199,53 @@ async function insertComicIntoChat(panelResults) {
 // Main flow
 // ------------------------------------------------------------------
 
+// Fetches, verifies, and cleanly re-encodes a generated image's URL so it
+// can be safely reused as a reference for a later generation — shared by
+// both the "last panel" and "first panel of this conversation" reference
+// features. Returns null (logging why) if it couldn't be prepared.
+async function prepareGeneratedImageAsReference(rawUrl, label) {
+    if (!rawUrl) return null;
+    if (rawUrl.startsWith("data:")) return rawUrl; // already a verified data URL (e.g. from a custom provider)
+    try {
+        let verifiedDataUrl = await blobUrlToDataUrl(rawUrl);
+        // Re-encode through a canvas to strip any embedded metadata (EXIF,
+        // ICC profiles, custom chunks) the generated image might carry —
+        // NanoGPT reported a nonsense "image too large" size for this exact
+        // kind of reference even though its real, locally-decoded pixel
+        // dimensions were entirely normal, consistent with their parser
+        // tripping over something other than the actual pixel data.
+        try {
+            verifiedDataUrl = await reencodeImageCleanly(verifiedDataUrl);
+        } catch (reencodeErr) {
+            console.warn(`[Comic Panel Generator] Clean re-encode of ${label} failed, using the verified-but-unmodified data URL instead:`, reencodeErr);
+        }
+        return verifiedDataUrl;
+    } catch (err) {
+        console.warn(`[Comic Panel Generator] ⚠️ Could not fetch/verify ${label} (${rawUrl}) to reuse as a reference:`, err);
+        return null;
+    }
+}
+
+// Adds an extra reference on top of the current list, respecting the
+// model's max-references limit: uses free room if there is any, otherwise
+// trades away the lowest-priority existing reference (unless the model
+// only supports 1 total, in which case the extra is skipped rather than
+// displacing the character/persona reference). Shared logic for both the
+// "first panel of this conversation" and "last generated panel" features.
+function addExtraReferenceWithTradeoff(currentRefs, maxRefs, extraRef, label, panelIndex) {
+    if (!extraRef || maxRefs <= 0) return currentRefs;
+    if (currentRefs.length < maxRefs) {
+        console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: adding ${label} as an extra reference (slot ${currentRefs.length + 1}/${maxRefs}).`);
+        return currentRefs.concat([extraRef]);
+    }
+    if (maxRefs > 1) {
+        console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: reference limit (${maxRefs}) already full — trading the lowest-priority reference for ${label}.`);
+        return currentRefs.slice(0, maxRefs - 1).concat([extraRef]);
+    }
+    console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: model only supports 1 reference — keeping the existing one instead of swapping in ${label}.`);
+    return currentRefs;
+}
+
 async function onGenerateClick() {
     const s = settings();
     const activeCustomProvider = getActiveCustomProvider(s);
@@ -3240,53 +3305,6 @@ async function onGenerateClick() {
         negativePromptToUse = review.negativePrompt;
     }
 
-// Fetches, verifies, and cleanly re-encodes a generated image's URL so it
-// can be safely reused as a reference for a later generation — shared by
-// both the "last panel" and "first panel of this conversation" reference
-// features. Returns null (logging why) if it couldn't be prepared.
-async function prepareGeneratedImageAsReference(rawUrl, label) {
-    if (!rawUrl) return null;
-    if (rawUrl.startsWith("data:")) return rawUrl; // already a verified data URL (e.g. from a custom provider)
-    try {
-        let verifiedDataUrl = await blobUrlToDataUrl(rawUrl);
-        // Re-encode through a canvas to strip any embedded metadata (EXIF,
-        // ICC profiles, custom chunks) the generated image might carry —
-        // NanoGPT reported a nonsense "image too large" size for this exact
-        // kind of reference even though its real, locally-decoded pixel
-        // dimensions were entirely normal, consistent with their parser
-        // tripping over something other than the actual pixel data.
-        try {
-            verifiedDataUrl = await reencodeImageCleanly(verifiedDataUrl);
-        } catch (reencodeErr) {
-            console.warn(`[Comic Panel Generator] Clean re-encode of ${label} failed, using the verified-but-unmodified data URL instead:`, reencodeErr);
-        }
-        return verifiedDataUrl;
-    } catch (err) {
-        console.warn(`[Comic Panel Generator] ⚠️ Could not fetch/verify ${label} (${rawUrl}) to reuse as a reference:`, err);
-        return null;
-    }
-}
-
-// Adds an extra reference on top of the current list, respecting the
-// model's max-references limit: uses free room if there is any, otherwise
-// trades away the lowest-priority existing reference (unless the model
-// only supports 1 total, in which case the extra is skipped rather than
-// displacing the character/persona reference). Shared logic for both the
-// "first panel of this conversation" and "last generated panel" features.
-function addExtraReferenceWithTradeoff(currentRefs, maxRefs, extraRef, label, panelIndex) {
-    if (!extraRef || maxRefs <= 0) return currentRefs;
-    if (currentRefs.length < maxRefs) {
-        console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: adding ${label} as an extra reference (slot ${currentRefs.length + 1}/${maxRefs}).`);
-        return currentRefs.concat([extraRef]);
-    }
-    if (maxRefs > 1) {
-        console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: reference limit (${maxRefs}) already full — trading the lowest-priority reference for ${label}.`);
-        return currentRefs.slice(0, maxRefs - 1).concat([extraRef]);
-    }
-    console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: model only supports 1 reference — keeping the existing one instead of swapping in ${label}.`);
-    return currentRefs;
-}
-
     const grid = openOverlay(panels.length, s.comicStyle);
     const results = [];
     let lastGeneratedForReference = null;
@@ -3344,6 +3362,19 @@ function addExtraReferenceWithTradeoff(currentRefs, maxRefs, extraRef, label, pa
 
     setStatus("Comic completed.");
     notify("success", "Comic generated!");
+
+    const refSummary = document.getElementById("cpg_ref_summary");
+    if (refSummary) {
+        const allRefs = [...baseReferences];
+        if (s.useFirstPanelAsReference && firstPanelReference && !allRefs.includes(firstPanelReference)) {
+            allRefs.push(firstPanelReference);
+        }
+        if (allRefs.length > 0) {
+            refSummary.innerHTML = allRefs
+                .map((url, i) => `<img src="${url}" class="cpg-ref-summary-thumb" title="Reference image ${i + 1} used for this comic" alt="Reference ${i + 1}" />`)
+                .join("");
+        }
+    }
 
     const insertBtn = document.getElementById("cpg_insert_now_btn");
     if (insertBtn) {
