@@ -1868,6 +1868,15 @@ function getActiveCustomProvider(s) {
     return (s.customProviders || []).find((p) => p.id === s.activeProviderId) || null;
 }
 
+// Display name of whichever provider is currently active — used in every
+// user-facing message so the UI never hardcodes "NanoGPT" when a custom
+// provider might actually be the one in use.
+function getActiveProviderDisplayName() {
+    const s = settings();
+    const customProvider = getActiveCustomProvider(s);
+    return customProvider ? customProvider.name : "NanoGPT";
+}
+
 // Best-effort starting template for Fooocus-API (community project, NOT
 // part of Fooocus itself) in SYNCHRONOUS mode ("async_process": false).
 // Based on the project's generally documented schema — NOT verified live
@@ -2440,7 +2449,7 @@ function openPromptReviewOverlay(panels, promptInfos, defaultNegativePrompt) {
                     <span class="cpg-close-btn" id="cpg_review_close_btn">✖</span>
                 </div>
                 <p style="font-size:0.8em; opacity:0.8; margin-top:0;">
-                    This is the exact text that will be sent to NanoGPT for each panel. Edit anything you want,
+                    This is the exact text that will be sent to ${escapeHtml(getActiveProviderDisplayName())} for each panel. Edit anything you want,
                     then confirm — or cancel to abort without generating anything.
                 </p>
                 <div class="cpg-review-panel">
@@ -2450,7 +2459,6 @@ function openPromptReviewOverlay(panels, promptInfos, defaultNegativePrompt) {
                 ${panelsHtml}
                 <div class="cpg-buttons">
                     <button id="cpg_review_confirm_btn" class="menu_button">✅ Generate comic</button>
-                    <button id="cpg_review_cancel_btn" class="menu_button">✖ Cancel</button>
                 </div>
             </div>
         `;
@@ -2463,7 +2471,6 @@ function openPromptReviewOverlay(panels, promptInfos, defaultNegativePrompt) {
         };
 
         document.getElementById("cpg_review_close_btn").addEventListener("click", () => cleanup({ confirmed: false }));
-        document.getElementById("cpg_review_cancel_btn").addEventListener("click", () => cleanup({ confirmed: false }));
         overlay.addEventListener("click", (e) => {
             if (e.target === overlay) cleanup({ confirmed: false });
         });
@@ -3116,7 +3123,7 @@ async function exportComicAsSingleImage() {
         console.warn("[Comic Panel Generator] Single-image export failed (likely CORS limitation):", err);
         if (statusEl) {
             statusEl.textContent =
-                "Could not compose a single image (CORS limitation on NanoGPT's side). " +
+                `Could not compose a single image (CORS limitation on ${getActiveProviderDisplayName()}'s side). ` +
                 "Use the download buttons on individual panels, or insert into chat as separate images.";
         }
         return null;
@@ -3226,7 +3233,7 @@ async function onGenerateClick() {
         const review = await openPromptReviewOverlay(panels, promptInfos, negativePromptToUse);
         if (!review.confirmed) {
             setStatus("Cancelled.");
-            notify("info", "Comic generation cancelled — nothing was sent to NanoGPT.");
+            notify("info", `Comic generation cancelled — nothing was sent to ${getActiveProviderDisplayName()}.`);
             return;
         }
         promptInfos = review.promptInfos;
