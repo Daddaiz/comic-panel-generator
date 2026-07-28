@@ -2877,6 +2877,13 @@ function attachRetryButton(panelEl, index, panels, results, references, promptIn
                 s.firstReferenceByChat[chatId] = prepared;
                 saveSettingsDebounced();
                 console.log(`[Comic Panel Generator] First-panel reference for this conversation updated to the regenerated image (chat: "${chatId}").`);
+
+                // Also refresh the visible thumbnail next to Insert/Export,
+                // which otherwise stays frozen on whatever it showed right
+                // after the initial generation — it doesn't repaint itself
+                // just because the underlying stored reference changed.
+                const thumb = document.getElementById("cpg_ref_summary_first_panel");
+                if (thumb) thumb.src = prepared;
             }
         }
     });
@@ -3366,12 +3373,19 @@ async function onGenerateClick() {
     const refSummary = document.getElementById("cpg_ref_summary");
     if (refSummary) {
         const allRefs = [...baseReferences];
+        let firstPanelRefIndex = -1;
         if (s.useFirstPanelAsReference && firstPanelReference && !allRefs.includes(firstPanelReference)) {
+            firstPanelRefIndex = allRefs.length;
             allRefs.push(firstPanelReference);
         }
         if (allRefs.length > 0) {
             refSummary.innerHTML = allRefs
-                .map((url, i) => `<img src="${url}" class="cpg-ref-summary-thumb" title="Reference image ${i + 1} used for this comic" alt="Reference ${i + 1}" />`)
+                .map((url, i) => {
+                    const isFirstPanelRef = i === firstPanelRefIndex;
+                    const idAttr = isFirstPanelRef ? ` id="cpg_ref_summary_first_panel"` : "";
+                    const title = isFirstPanelRef ? "This conversation's permanent first-panel reference — updates automatically if you regenerate panel 1" : `Reference image ${i + 1} used for this comic`;
+                    return `<img src="${url}" class="cpg-ref-summary-thumb"${idAttr} title="${escapeHtml(title)}" alt="Reference ${i + 1}" />`;
+                })
                 .join("");
         }
     }
