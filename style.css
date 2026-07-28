@@ -6,6 +6,15 @@
     cursor: not-allowed;
 }
 
+.cpg-modal .cpg-buttons {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+}
+
 #comic_panel_generator_settings .cpg-group {
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 6px;

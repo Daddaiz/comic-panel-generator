@@ -2496,8 +2496,8 @@ function openOverlay(numPanels, comicStyle) {
                 <div class="cpg-grid" id="cpg_grid" style="grid-template-columns: repeat(${columns}, 1fr);"></div>
             </div>
             <div class="cpg-buttons">
-                <button id="cpg_insert_now_btn" class="menu_button">📩 Insert into chat</button>
-                <button id="cpg_export_btn" class="menu_button">💾 Export as single image</button>
+                <button id="cpg_insert_now_btn" class="menu_button" disabled title="Available once all panels have finished generating">📩 Insert</button>
+                <button id="cpg_export_btn" class="menu_button" disabled title="Available once all panels have finished generating">💾 Export</button>
             </div>
             <div id="cpg_export_status" class="cpg-status"></div>
         </div>
@@ -3340,6 +3340,8 @@ function addExtraReferenceWithTradeoff(currentRefs, maxRefs, extraRef, label, pa
 
     const insertBtn = document.getElementById("cpg_insert_now_btn");
     if (insertBtn) {
+        insertBtn.disabled = false;
+        insertBtn.title = "";
         insertBtn.addEventListener("click", async () => {
             insertBtn.disabled = true;
             insertBtn.textContent = "📩 Inserting...";
@@ -3351,6 +3353,8 @@ function addExtraReferenceWithTradeoff(currentRefs, maxRefs, extraRef, label, pa
 
     const exportBtn = document.getElementById("cpg_export_btn");
     if (exportBtn) {
+        exportBtn.disabled = false;
+        exportBtn.title = "";
         exportBtn.addEventListener("click", async () => {
             const dataUrl = await exportComicAsSingleImage();
             if (!dataUrl) return;
