@@ -1122,6 +1122,80 @@ function naiveSplit(text, numPanels) {
 // https://docs.nano-gpt.com/api-reference/image-generation
 // ------------------------------------------------------------------
 
+// ------------------------------------------------------------------
+// Known, VERIFIED per-model configs — confirmed directly against
+// NanoGPT's own site (its own request-export feature), pasted in by the
+// person using this extension. These are the safest source of truth we
+// have: unlike the live metadata-fetch further below (whose real
+// existence/reliability as an actual queryable endpoint was never
+// confirmed), these come from real, verified request bodies. New models
+// get added here as they get verified the same way; anything NOT listed
+// falls back to a generic best-effort guess modeled on Qwen's shape
+// (the most common one confirmed so far).
+// ------------------------------------------------------------------
+const KNOWN_MODEL_CONFIGS = [
+    {
+        name: "Qwen Image",
+        match: (id) => isQwenModel(id),
+        resolutionFormat: "pixels", // "resolution" takes pixel-dimension strings like "1024x1024"
+        resolutionOptions: ["auto", "1024x1024", "512x512", "768x1024", "576x1024", "1024x768", "1024x576"],
+        supportsAspectRatioField: true, // separate "aspect_ratio" field alongside "resolution"
+        supportsGuidanceScale: true,
+        supportsInferenceSteps: true,
+        supportsNegativePrompt: true,
+        supportsWan27Fields: true,
+        supportsSafetyCheckerField: true,
+        maxReferences: 3,
+        stepsDefault: 30,
+        stepsMin: 2,
+        stepsMax: 50,
+        cfgDefault: 2.5,
+        cfgMin: 1,
+        cfgMax: 20,
+        cfgStep: 0.5,
+    },
+    {
+        name: "Seedream 5.0 Pro",
+        match: (id) => /seedream/i.test(id || ""),
+        resolutionFormat: "aspect-ratio", // "resolution" field IS the aspect ratio string itself, e.g. "16:9"
+        resolutionOptions: ["1:1", "16:9", "9:16", "3:2", "2:3", "4:3", "3:4"],
+        supportsAspectRatioField: false, // no separate field needed — "resolution" already is the ratio
+        supportsGuidanceScale: false, // not in this model's supported_parameters at all
+        supportsInferenceSteps: false, // not in this model's supported_parameters at all
+        supportsNegativePrompt: false, // absent from both the example body and supported_parameters
+        supportsWan27Fields: false, // absent from the verified example — Qwen-specific, not universal
+        supportsSafetyCheckerField: false, // absent from the verified example
+        maxReferences: 10,
+    },
+];
+
+function getKnownModelConfig(modelId) {
+    return KNOWN_MODEL_CONFIGS.find((c) => c.match(modelId)) || null;
+}
+
+// Converts a WxH pixel-size string (this extension's general "Size"
+// setting) into the closest matching aspect-ratio string from a model's
+// own allowed options (e.g. Seedream's "resolution" field takes "16:9",
+// not pixel dimensions) — compares ratios on a log scale so portrait and
+// landscape mismatches of the same magnitude are treated symmetrically.
+function pixelSizeToClosestAspectRatioString(imageSize, allowedOptions) {
+    const parts = (imageSize || "1024x1024").split("x").map((n) => parseInt(n, 10));
+    const [w, h] = parts.length === 2 && parts[0] && parts[1] ? parts : [1024, 1024];
+    const targetLogRatio = Math.log(w / h);
+    let best = allowedOptions[0];
+    let bestDiff = Infinity;
+    for (const opt of allowedOptions) {
+        const [rw, rh] = opt.split(":").map(Number);
+        if (!rw || !rh) continue;
+        const diff = Math.abs(targetLogRatio - Math.log(rw / rh));
+        if (diff < bestDiff) {
+            bestDiff = diff;
+            best = opt;
+        }
+    }
+    return best;
+}
+
 const modelEndpointMetadataCache = {};
 
 async function fetchModelEndpointMetadata(modelId) {
@@ -1156,29 +1230,38 @@ async function getMaxReferencesForModel(modelId) {
         return customProvider.supportsReferences ? (customProvider.maxReferences || 1) : 0;
     }
     if (!modelId) return DEFAULT_MAX_INPUT_REFERENCES;
+
+    const known = getKnownModelConfig(modelId);
+    if (known) {
+        console.log(`[Comic Panel Generator] input_references limit for "${modelId}" (verified config "${known.name}"): ${known.maxReferences}`);
+        return known.maxReferences;
+    }
+
     const endpoint = await fetchModelEndpointMetadata(modelId);
-    const maxItems = endpoint?.input_reference_constraints?.max_items;
+    // Real field name confirmed as "inputImageConstraints" against two
+    // separate verified specs (Qwen Image and Seedream 5.0 Pro) — this
+    // fallback previously read the wrong name ("input_reference_constraints"),
+    // so it never actually matched anything even when this lookup did work.
+    const maxItems = endpoint?.inputImageConstraints?.max_items;
     const resolved = typeof maxItems === "number" && maxItems > 0 ? maxItems : DEFAULT_MAX_INPUT_REFERENCES;
-    console.log(`[Comic Panel Generator] input_references limit for "${modelId}": ${resolved}`);
+    console.log(`[Comic Panel Generator] input_references limit for "${modelId}" (unverified fallback lookup): ${resolved}`);
     return resolved;
 }
 
 // Whether this model uses the "structured" generation endpoint/params
-// (imageDataUrl(s), nImages, resolution, guidance_scale, num_inference_steps,
-// showExplicitContent...) as verified directly against NanoGPT's own API
-// export for Qwen Image — verified TWICE, directly by the person using
-// this extension, against NanoGPT's own site. That confirmation is
-// treated as authoritative and checked FIRST, regardless of what the
-// endpoint-metadata lookup below concludes — that lookup hits an endpoint
-// (GET /api/v1/images/models/{id}/endpoints) whose existence/shape was
-// never actually confirmed against a live response, only assumed from
-// general REST conventions. If it silently returns something that doesn't
-// look like what we expect, Qwen must not fall back to the wrong (old,
-// unverified) endpoint. The metadata lookup remains useful as a way to
-// *additionally* detect other models exposed the same way (e.g. WAI
-// Illustrious SDXL), just not as the deciding vote for Qwen itself.
+// (imageDataUrl(s), nImages, resolution, showExplicitContent...) as
+// verified directly against NanoGPT's own API export — confirmed for both
+// Qwen Image and Seedream 5.0 Pro, by the person using this extension,
+// against NanoGPT's own site. Every model in KNOWN_MODEL_CONFIGS uses this
+// endpoint, so matching one there is treated as authoritative and checked
+// FIRST, regardless of what the live metadata lookup below concludes —
+// that lookup hits an endpoint whose existence/shape was never actually
+// confirmed against a live response, only assumed from general REST
+// conventions. The metadata lookup remains useful as a best-effort way to
+// *additionally* detect other, not-yet-verified models exposed the same
+// way, just not as the deciding vote for anything already verified.
 async function usesStructuredGenerationFormat(modelId) {
-    if (isQwenModel(modelId)) return true;
+    if (getKnownModelConfig(modelId)) return true;
 
     const endpoint = await fetchModelEndpointMetadata(modelId);
     if (!endpoint) return false;
@@ -1186,10 +1269,33 @@ async function usesStructuredGenerationFormat(modelId) {
     return paramNames.includes("imageDataUrl") || paramNames.includes("imageDataUrls") || paramNames.includes("nImages");
 }
 
-// Reads this model's own declared Steps/CFG Scale default+range, so the
-// settings panel can show (and generation can use) the correct values for
-// whichever model is actually selected, instead of one-size-fits-all.
+// Reads this model's own declared Steps/CFG Scale default+range (plus
+// whether it supports them at all — e.g. Seedream 5.0 Pro's verified spec
+// has neither parameter), so the settings panel can show correct values
+// and generation can correctly omit fields a model doesn't declare.
 async function getGenerationParamDefaults(modelId) {
+    const known = getKnownModelConfig(modelId);
+    if (known) {
+        return {
+            steps: {
+                default: known.stepsDefault ?? QWEN_INFERENCE_STEPS,
+                min: known.stepsMin ?? 1,
+                max: known.stepsMax ?? 50,
+                supported: !!known.supportsInferenceSteps,
+            },
+            cfg: {
+                default: known.cfgDefault ?? QWEN_GUIDANCE_SCALE,
+                min: known.cfgMin ?? 1,
+                max: known.cfgMax ?? 20,
+                step: known.cfgStep ?? 0.5,
+                supported: !!known.supportsGuidanceScale,
+            },
+        };
+    }
+
+    // Unverified fallback for anything not in KNOWN_MODEL_CONFIGS yet —
+    // assumes support (best-effort guess) since we have no confirmation
+    // either way, modeled on Qwen's shape as the most common one seen.
     const endpoint = await fetchModelEndpointMetadata(modelId);
     const stepsParam = endpoint?.supported_parameters?.num_inference_steps;
     const cfgParam = endpoint?.supported_parameters?.guidance_scale;
@@ -1198,12 +1304,14 @@ async function getGenerationParamDefaults(modelId) {
             default: typeof stepsParam?.default === "number" ? stepsParam.default : QWEN_INFERENCE_STEPS,
             min: typeof stepsParam?.min === "number" ? stepsParam.min : 1,
             max: typeof stepsParam?.max === "number" ? stepsParam.max : 50,
+            supported: true,
         },
         cfg: {
             default: typeof cfgParam?.default === "number" ? cfgParam.default : QWEN_GUIDANCE_SCALE,
             min: typeof cfgParam?.min === "number" ? cfgParam.min : 1,
             max: typeof cfgParam?.max === "number" ? cfgParam.max : 20,
             step: typeof cfgParam?.step === "number" ? cfgParam.step : 0.5,
+            supported: true,
         },
     };
 }
@@ -2042,59 +2150,94 @@ async function generateImageViaNanoGPT(prompt, references, negativePromptOverrid
     let url, body;
 
     if (useStructured) {
-        // ---- "Structured" NanoGPT models (Qwen Image, WAI Illustrious SDXL,
-        // and any other model NanoGPT exposes the same way) ----
-        // Verified directly against NanoGPT's own "export as API" feature for
-        // Qwen Image (pasted twice, identical both times), and detected
-        // generically here (rather than hardcoded to one model name) by
-        // checking whether the model's own declared parameters include
-        // imageDataUrl(s)/nImages. Uses this model's own Steps/CFG Scale
-        // default+range (read from NanoGPT, not hardcoded), with any value
-        // the person has customized for THIS specific model taking priority.
+        // ---- "Structured" NanoGPT models (Qwen Image, Seedream 5.0 Pro,
+        // and any other model verified the same way) ----
+        // Each model's exact shape can differ meaningfully — e.g. Qwen's
+        // "resolution" takes pixel dimensions ("1024x1024") and has a
+        // separate "aspect_ratio" field, while Seedream's "resolution" IS
+        // the aspect ratio string itself ("16:9") with no such extra field;
+        // Seedream also has no guidance_scale/num_inference_steps/
+        // negative_prompt/wan27_* fields at all in its verified spec. The
+        // config for the current model (KNOWN_MODEL_CONFIGS) drives all of
+        // this instead of assuming every model matches Qwen's shape.
         url = "https://nano-gpt.com/api/v1/images/generations";
 
-        const endpoint = await fetchModelEndpointMetadata(s.model);
-        const resolutionOptions = endpoint?.supported_parameters?.resolution?.options;
-        const validResolutions = Array.isArray(resolutionOptions) && resolutionOptions.length > 0
-            ? resolutionOptions.map((o) => o.value)
-            : FALLBACK_STRUCTURED_RESOLUTIONS;
-        const resolution = validResolutions.includes(s.imageSize) ? s.imageSize : "auto";
+        const known = getKnownModelConfig(s.model);
+        let validResolutions, resolutionFormat;
+        if (known) {
+            validResolutions = known.resolutionOptions;
+            resolutionFormat = known.resolutionFormat;
+        } else {
+            // Unverified model using the structured format via the best-effort
+            // metadata lookup — assume Qwen's pixel-dimension shape, the most
+            // common one confirmed so far.
+            const endpoint = await fetchModelEndpointMetadata(s.model);
+            const resolutionOptions = endpoint?.supported_parameters?.resolution?.options;
+            validResolutions = Array.isArray(resolutionOptions) && resolutionOptions.length > 0
+                ? resolutionOptions.map((o) => o.value)
+                : FALLBACK_STRUCTURED_RESOLUTIONS;
+            resolutionFormat = "pixels";
+        }
 
-        const paramDefaults = await getGenerationParamDefaults(s.model);
-        const savedParams = s.perModelGenerationParams?.[s.model];
-        const steps = typeof savedParams?.steps === "number" ? savedParams.steps : paramDefaults.steps.default;
-        const cfg = typeof savedParams?.cfg === "number" ? savedParams.cfg : paramDefaults.cfg.default;
-
-        // aspect_ratio: present in every verified request example from
-        // NanoGPT's own site but absent from the documented
-        // supported_parameters — likely needed to fully pin down the output
-        // shape (especially when resolution is "auto"), matching the same
-        // resolution options NanoGPT itself documents with these exact
-        // aspect labels ("Portrait (3:4)", "Landscape (16:9)", etc.).
-        const aspectRatio = STRUCTURED_RESOLUTION_ASPECTS[resolution] || "1:1";
+        const resolution = resolutionFormat === "aspect-ratio"
+            ? pixelSizeToClosestAspectRatioString(s.imageSize, validResolutions)
+            : (validResolutions.includes(s.imageSize) ? s.imageSize : "auto");
 
         body = {
             model: s.model,
             prompt: safePrompt,
-            negative_prompt: negativePrompt || "",
             resolution,
-            resolutionExplicit: true,
-            aspect_ratio: aspectRatio,
             nImages: 1,
-            guidance_scale: cfg,
-            num_inference_steps: steps,
             // Native NSFW handling for this route, instead of relying on
             // stuffing "NSFW" into the prompt/negative_prompt as free text.
             showExplicitContent: !!s.nsfw,
-            enable_safety_checker: !s.nsfw,
-            // Present in every verified NanoGPT request example for this
-            // route (regardless of model) — likely generic scaffolding
-            // fields their frontend always sends. Included for parity;
-            // wan27_has_reference_images reflects whether we're actually
-            // attaching reference images this time.
-            wan27_has_video_input: false,
-            wan27_has_reference_images: hasRefs,
         };
+
+        // Only include fields this specific model is actually verified (or,
+        // for unverified models, assumed by default) to support — sending a
+        // field a model's spec never declares is harmless in most APIs, but
+        // there's no reason to guess when we have real confirmation either way.
+        const supportsAspectRatioField = known ? known.supportsAspectRatioField : true;
+        const supportsGuidanceScale = known ? known.supportsGuidanceScale : true;
+        const supportsInferenceSteps = known ? known.supportsInferenceSteps : true;
+        const supportsNegativePrompt = known ? known.supportsNegativePrompt : true;
+        const supportsWan27Fields = known ? known.supportsWan27Fields : false;
+        const supportsSafetyCheckerField = known ? known.supportsSafetyCheckerField : true;
+
+        if (resolutionFormat === "pixels") {
+            body.resolutionExplicit = true;
+        }
+        if (supportsAspectRatioField) {
+            // Present in every verified Qwen request example but absent from
+            // its documented supported_parameters — likely needed to fully
+            // pin down the output shape (especially when resolution is
+            // "auto"), matching the same resolution options NanoGPT itself
+            // documents with these exact aspect labels.
+            body.aspect_ratio = STRUCTURED_RESOLUTION_ASPECTS[resolution] || "1:1";
+        }
+        if (supportsGuidanceScale || supportsInferenceSteps) {
+            const paramDefaults = await getGenerationParamDefaults(s.model);
+            const savedParams = s.perModelGenerationParams?.[s.model];
+            if (supportsGuidanceScale) {
+                body.guidance_scale = typeof savedParams?.cfg === "number" ? savedParams.cfg : paramDefaults.cfg.default;
+            }
+            if (supportsInferenceSteps) {
+                body.num_inference_steps = typeof savedParams?.steps === "number" ? savedParams.steps : paramDefaults.steps.default;
+            }
+        }
+        if (supportsNegativePrompt) {
+            body.negative_prompt = negativePrompt || "";
+        }
+        if (supportsSafetyCheckerField) {
+            body.enable_safety_checker = !s.nsfw;
+        }
+        if (supportsWan27Fields) {
+            // Present in every verified NanoGPT request example for Qwen
+            // specifically — NOT universal (absent from Seedream's verified
+            // spec), so only included for models confirmed to use it.
+            body.wan27_has_video_input = false;
+            body.wan27_has_reference_images = hasRefs;
+        }
         // Only set when the person has "use the same seed for every panel"
         // on and we've been handed one — otherwise omitted entirely, which
         // NanoGPT documents as meaning "fully random" (its own default).
@@ -2102,7 +2245,7 @@ async function generateImageViaNanoGPT(prompt, references, negativePromptOverrid
             body.seed = seed;
         }
         if (hasRefs) {
-            // Up to the model's own declared max — see input_reference_constraints.
+            // Up to the model's own declared max — see getMaxReferencesForModel.
             body.imageDataUrls = references;
         }
     } else {
@@ -2136,7 +2279,16 @@ async function generateImageViaNanoGPT(prompt, references, negativePromptOverrid
         `[Comic Panel Generator] → POST ${url} | model: ${body.model} | references: ${hasRefs ? references.length : 0}\n` +
         `  prompt: ${body.prompt}\n` +
         `  negative_prompt: ${negativePrompt || "(none)"}` +
-        (useStructured ? `\n  structured format: CFG ${body.guidance_scale}, ${body.num_inference_steps} steps, resolution ${body.resolution}, aspect_ratio ${body.aspect_ratio}${typeof body.seed === "number" ? `, seed ${body.seed}` : ""}` : "\n  (generic/legacy format — no CFG/steps/aspect_ratio sent on this route)")
+        (useStructured
+            ? "\n  structured format: " +
+              [
+                  `resolution ${body.resolution}`,
+                  typeof body.aspect_ratio !== "undefined" ? `aspect_ratio ${body.aspect_ratio}` : null,
+                  typeof body.guidance_scale !== "undefined" ? `CFG ${body.guidance_scale}` : null,
+                  typeof body.num_inference_steps !== "undefined" ? `${body.num_inference_steps} steps` : null,
+                  typeof body.seed === "number" ? `seed ${body.seed}` : null,
+              ].filter(Boolean).join(", ")
+            : "\n  (generic/legacy format — no CFG/steps/aspect_ratio sent on this route)")
     );
     if (hasRefs) {
         // Explicit, separate log of the exact reference images actually
@@ -2426,11 +2578,15 @@ async function applyGenerationParamsForModelUI(modelId) {
     stepsInput.min = defaults.steps.min;
     stepsInput.max = defaults.steps.max;
     stepsInput.value = steps;
+    stepsInput.disabled = defaults.steps.supported === false;
+    stepsInput.title = defaults.steps.supported === false ? `"${modelId}" doesn't support this parameter — it won't be sent.` : "";
 
     cfgInput.min = defaults.cfg.min;
     cfgInput.max = defaults.cfg.max;
     cfgInput.step = defaults.cfg.step;
     cfgInput.value = cfg;
+    cfgInput.disabled = defaults.cfg.supported === false;
+    cfgInput.title = defaults.cfg.supported === false ? `"${modelId}" doesn't support this parameter — it won't be sent.` : "";
 
     if (!s.perModelGenerationParams) s.perModelGenerationParams = {};
     if (!s.perModelGenerationParams[modelId]) {
