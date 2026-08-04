@@ -138,7 +138,7 @@ function buildSettingsHtml() {
     <div id="comic_panel_generator_settings">
         <div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>Comic Panel Setting</b>
+                <b>Comic Panel Settings</b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
