@@ -95,37 +95,6 @@
     opacity: 0.85;
 }
 
-.cpg-review-panel {
-    margin-bottom: 12px;
-}
-
-.cpg-review-panel label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.82em;
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.cpg-review-textarea {
-    width: 100%;
-    min-height: 70px;
-    resize: vertical;
-    font-family: inherit;
-    font-size: 0.82em;
-    padding: 6px 8px;
-    border-radius: 6px;
-    box-sizing: border-box;
-}
-
-.cpg-review-badge {
-    font-size: 0.85em;
-    font-weight: 400;
-    color: #e0a030;
-    cursor: help;
-}
-
 #comic_panel_generator_settings .cpg-row {
     display: flex;
     align-items: center;
@@ -462,11 +431,41 @@
 }
 
 .cpg-panel.cpg-loading {
-    align-items: center;
-    justify-content: center;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
     min-height: 180px;
     color: #aaa;
     font-size: 0.85em;
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+.cpg-loading-status {
+    text-align: center;
+    margin-bottom: 8px;
+    flex-shrink: 0;
+}
+
+.cpg-loading-prompt-preview {
+    flex: 1;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: monospace;
+    font-size: 0.78em;
+    line-height: 1.4;
+    color: #888;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px dashed rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 6px 8px;
+    max-height: 220px;
+    /* Read-only by nature (plain div, not an input) — this is just a
+       glance-preview of what's being sent while the image isn't ready yet;
+       the real editable copy is in the "Prompts used" section below. */
+    user-select: none;
+    cursor: default;
 }
 
 .cpg-panel.cpg-error {

@@ -91,7 +91,6 @@ const defaultSettings = {
     personaAvatarFile: "",
     translateVisualToEnglish: true,
     includeCharacterAppearance: true,
-    reviewPromptsBeforeGenerating: true,
     referenceImages: [], // [{ url: "..." }]
     showCaptions: false,
     nsfw: false,
@@ -365,15 +364,6 @@ function buildSettingsHtml() {
                         <span style="font-size:0.75em; opacity:0.7;">
                             Fallback only: reference images always take priority. Only kicks in for characters with
                             NO reference image available, using their character card's "description" field.
-                        </span>
-                    </div>
-
-                    <div class="cpg-row">
-                        <label for="cpg_review_prompts">Review prompts before generating</label>
-                        <input id="cpg_review_prompts" type="checkbox" ${s.reviewPromptsBeforeGenerating ? "checked" : ""} />
-                        <span style="font-size:0.75em; opacity:0.7;">
-                            Shows the exact prompt for every panel in editable boxes before any image is generated —
-                            useful for debugging and tweaking a prompt by hand.
                         </span>
                     </div>
                 </details>
@@ -807,10 +797,6 @@ function bindSettingsEvents() {
     });
     document.getElementById("cpg_appearance").addEventListener("change", (e) => {
         s.includeCharacterAppearance = e.target.checked;
-        saveSettingsDebounced();
-    });
-    document.getElementById("cpg_review_prompts").addEventListener("change", (e) => {
-        s.reviewPromptsBeforeGenerating = e.target.checked;
         saveSettingsDebounced();
     });
     document.getElementById("cpg_neg_prompt").addEventListener("input", (e) => {
@@ -2459,78 +2445,6 @@ async function applyGenerationParamsForModelUI(modelId) {
 // Comic rendering: grid of divs + speech balloons
 // ------------------------------------------------------------------
 
-// ------------------------------------------------------------------
-// Prompt review screen: shows the exact, final prompt for every panel
-// (after translation, with style/negative prompt included) in editable
-// boxes, before any image gets generated. Returns a Promise resolving to
-// either { confirmed: true, promptInfos, negativePrompt } with any edits
-// applied, or { confirmed: false } if the person cancels.
-// ------------------------------------------------------------------
-
-function openPromptReviewOverlay(panels, promptInfos, defaultNegativePrompt) {
-    return new Promise((resolve) => {
-        const overlay = document.createElement("div");
-        overlay.className = "cpg-overlay";
-        overlay.id = "cpg_review_overlay";
-
-        const panelsHtml = promptInfos
-            .map((info, i) => {
-                const badge =
-                    info.translationInfo && !info.translationInfo.applied
-                        ? `<span class="cpg-review-badge" title="${escapeHtml(info.translationInfo.reason)}">⚠️ not translated</span>`
-                        : "";
-                return `
-                <div class="cpg-review-panel">
-                    <label>Panel ${i + 1} prompt ${badge}</label>
-                    <textarea class="cpg-review-textarea" data-panel-index="${i}">${escapeHtml(info.prompt)}</textarea>
-                </div>`;
-            })
-            .join("");
-
-        overlay.innerHTML = `
-            <div class="cpg-modal">
-                <div class="cpg-modal-header">
-                    <h3>🔍 Review prompts before generating</h3>
-                    <span class="cpg-close-btn" id="cpg_review_close_btn">✖</span>
-                </div>
-                <p style="font-size:0.8em; opacity:0.8; margin-top:0;">
-                    This is the exact text that will be sent to ${escapeHtml(getActiveProviderDisplayName())} for each panel. Edit anything you want,
-                    then confirm — or cancel to abort without generating anything.
-                </p>
-                <div class="cpg-review-panel">
-                    <label>Negative prompt (shared across all panels)</label>
-                    <textarea class="cpg-review-textarea" id="cpg_review_negative">${escapeHtml(defaultNegativePrompt)}</textarea>
-                </div>
-                ${panelsHtml}
-                <div class="cpg-buttons">
-                    <button id="cpg_review_confirm_btn" class="menu_button">✅ Generate comic</button>
-                </div>
-            </div>
-        `;
-
-        document.body.appendChild(overlay);
-
-        const cleanup = (result) => {
-            overlay.remove();
-            resolve(result);
-        };
-
-        document.getElementById("cpg_review_close_btn").addEventListener("click", () => cleanup({ confirmed: false }));
-        overlay.addEventListener("click", (e) => {
-            if (e.target === overlay) cleanup({ confirmed: false });
-        });
-
-        document.getElementById("cpg_review_confirm_btn").addEventListener("click", () => {
-            const editedNegativePrompt = document.getElementById("cpg_review_negative").value;
-            const editedInfos = promptInfos.map((info, i) => {
-                const textarea = overlay.querySelector(`.cpg-review-textarea[data-panel-index="${i}"]`);
-                return { ...info, prompt: textarea ? textarea.value : info.prompt };
-            });
-            cleanup({ confirmed: true, promptInfos: editedInfos, negativePrompt: editedNegativePrompt });
-        });
-    });
-}
-
 function openOverlay(numPanels, comicStyle) {
     const overlay = document.createElement("div");
     overlay.className = "cpg-overlay";
@@ -2573,12 +2487,25 @@ function openOverlay(numPanels, comicStyle) {
     return document.getElementById("cpg_grid");
 }
 
-function addLoadingPanel(grid, index) {
+function addLoadingPanel(grid, index, promptText) {
     const panel = document.createElement("div");
     panel.className = "cpg-panel cpg-loading";
     panel.id = `cpg_panel_${index}`;
     panel.style.setProperty("--cpg-tilt", `${(index % 2 === 0 ? -1 : 1) * (0.6 + (index % 3) * 0.3)}deg`);
-    panel.textContent = `Generating panel ${index + 1}...`;
+    // Show the actual prompt text being sent while the panel is generating —
+    // read-only here (a plain, non-editable div, not a textarea/input), just
+    // so it can be checked at a glance without waiting for the image. The
+    // real, editable copy lives in the "Prompts used" section below the grid.
+    const statusEl = document.createElement("div");
+    statusEl.className = "cpg-loading-status";
+    statusEl.textContent = `Generating panel ${index + 1}...`;
+    panel.appendChild(statusEl);
+    if (promptText) {
+        const previewEl = document.createElement("div");
+        previewEl.className = "cpg-loading-prompt-preview";
+        previewEl.textContent = promptText;
+        panel.appendChild(previewEl);
+    }
     grid.appendChild(panel);
     return panel;
 }
@@ -2913,7 +2840,17 @@ function attachRetryButton(panelEl, index, panels, results, references, promptIn
     btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         panelEl.className = "cpg-panel cpg-loading";
-        panelEl.textContent = `Regenerating panel ${index + 1}...`;
+        panelEl.innerHTML = "";
+        const statusEl = document.createElement("div");
+        statusEl.className = "cpg-loading-status";
+        statusEl.textContent = `Regenerating panel ${index + 1}...`;
+        panelEl.appendChild(statusEl);
+        if (promptInfos[index]?.prompt) {
+            const previewEl = document.createElement("div");
+            previewEl.className = "cpg-loading-prompt-preview";
+            previewEl.textContent = promptInfos[index].prompt;
+            panelEl.appendChild(previewEl);
+        }
 
         // Read the negative prompt fresh from its (possibly edited) shared
         // textarea in the "Prompts used" section, instead of the value that
@@ -3367,19 +3304,8 @@ async function onGenerateClick() {
     }
 
     setStatus("Preparing panel prompts...");
-    let promptInfos = await buildAllPanelPromptInfos(panels);
-    let negativePromptToUse = buildNegativePrompt();
-
-    if (s.reviewPromptsBeforeGenerating) {
-        const review = await openPromptReviewOverlay(panels, promptInfos, negativePromptToUse);
-        if (!review.confirmed) {
-            setStatus("Cancelled.");
-            notify("info", `Comic generation cancelled — nothing was sent to ${getActiveProviderDisplayName()}.`);
-            return;
-        }
-        promptInfos = review.promptInfos;
-        negativePromptToUse = review.negativePrompt;
-    }
+    const promptInfos = await buildAllPanelPromptInfos(panels);
+    const negativePromptToUse = buildNegativePrompt();
 
     const grid = openOverlay(panels.length, s.comicStyle);
     const results = [];
@@ -3442,7 +3368,7 @@ async function onGenerateClick() {
     }
 
     for (let i = 0; i < panels.length; i++) {
-        const panelEl = addLoadingPanel(grid, i);
+        const panelEl = addLoadingPanel(grid, i, promptInfos[i]?.prompt);
         results.push(null); // placeholder, filled inside generateAndRenderPanel
 
         let referencesForPanel = baseReferences;
