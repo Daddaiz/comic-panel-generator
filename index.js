@@ -489,6 +489,36 @@ function buildSettingsHtml() {
 function setStatus(text) {
     const el = document.getElementById("cpg_status");
     if (el) el.textContent = text;
+    // Also mirror onto the full-screen prep overlay's status text, if it's
+    // currently showing — this is how the overlay stays updated through the
+    // whole "preparing panels" phase without every setStatus() call site
+    // needing to know about it separately.
+    const prepStatusEl = document.getElementById("cpg_prep_status");
+    if (prepStatusEl) prepStatusEl.textContent = text;
+}
+
+// Full-screen dimming overlay shown from the moment "Generate comic" is
+// clicked until the panels start actually rendering in the "Comic Panel
+// Generator" window — covers the otherwise silent/invisible period where
+// the LLM is splitting the scene into panels and preparing/translating
+// each prompt, which previously only updated a small, easy-to-miss status
+// line in the settings panel.
+function showPrepOverlay() {
+    if (document.getElementById("cpg_prep_overlay")) return; // already showing
+    const overlay = document.createElement("div");
+    overlay.id = "cpg_prep_overlay";
+    overlay.className = "cpg-prep-overlay";
+    overlay.innerHTML = `
+        <div class="cpg-prep-spinner"></div>
+        <div class="cpg-prep-title">🎬 Preparing your comic...</div>
+        <div id="cpg_prep_status" class="cpg-prep-status"></div>
+    `;
+    document.body.appendChild(overlay);
+}
+
+function hidePrepOverlay() {
+    const overlay = document.getElementById("cpg_prep_overlay");
+    if (overlay) overlay.remove();
 }
 
 function renderReferenceList() {
@@ -3429,6 +3459,7 @@ async function onGenerateClick() {
     }
 
     const numPanels = s.numPanels;
+    showPrepOverlay();
     setStatus("Generating panel descriptions...");
     notify("info", "Generating the comic, this might take a few seconds...");
 
@@ -3437,26 +3468,37 @@ async function onGenerateClick() {
         panels = await splitIntoPanels(sourceText, numPanels);
     } catch (err) {
         console.error(err);
+        hidePrepOverlay();
         notify("error", "Error while splitting the scene into panels.");
         setStatus("Error while splitting the scene.");
         return;
     }
 
     setStatus("Fetching reference images (character avatars / custom)...");
-    const { baseReferences, maxRefs } = await buildBaseReferencesForGeneration(s.model);
+    let baseReferences, maxRefs, promptInfos, negativePromptToUse;
+    try {
+        ({ baseReferences, maxRefs } = await buildBaseReferencesForGeneration(s.model));
 
-    if (baseReferences.length > 0) {
-        setStatus(`✅ Using ${baseReferences.length} reference image(s) to keep characters consistent.`);
-        notify("info", `Using ${baseReferences.length} reference image(s) (see Console for details).`);
-    } else if (s.useCharacterAvatars) {
-        setStatus("⚠️ No reference image found/used (see Console for why).");
-        notify("warning", "No character avatar found as a reference: check the Console (F12).");
+        if (baseReferences.length > 0) {
+            setStatus(`✅ Using ${baseReferences.length} reference image(s) to keep characters consistent.`);
+            notify("info", `Using ${baseReferences.length} reference image(s) (see Console for details).`);
+        } else if (s.useCharacterAvatars) {
+            setStatus("⚠️ No reference image found/used (see Console for why).");
+            notify("warning", "No character avatar found as a reference: check the Console (F12).");
+        }
+
+        setStatus("Preparing panel prompts...");
+        promptInfos = await buildAllPanelPromptInfos(panels);
+        negativePromptToUse = buildNegativePrompt();
+    } catch (err) {
+        console.error(err);
+        hidePrepOverlay();
+        notify("error", "Error while preparing panel prompts/references — see Console for details.");
+        setStatus("Error while preparing the comic.");
+        return;
     }
 
-    setStatus("Preparing panel prompts...");
-    const promptInfos = await buildAllPanelPromptInfos(panels);
-    const negativePromptToUse = buildNegativePrompt();
-
+    hidePrepOverlay();
     const grid = openOverlay(panels.length, s.comicStyle);
     const results = [];
     let lastGeneratedForReference = null;
