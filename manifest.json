@@ -8,7 +8,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "Custom Extension",
-  "version": "4.28.0",
+  "version": "4.28.1",
   "homePage": "",
   "auto_update": false,
   "generate_interceptor": ""

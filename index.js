@@ -138,7 +138,7 @@ function buildSettingsHtml() {
     <div id="comic_panel_generator_settings">
         <div class="inline-drawer">
             <div class="inline-drawer-toggle inline-drawer-header">
-                <b>🖼️ Comic Panel Generator</b>
+                <b>Comic Panel Setting</b>
                 <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
             </div>
             <div class="inline-drawer-content">
@@ -2455,7 +2455,7 @@ function openOverlay(numPanels, comicStyle) {
     overlay.innerHTML = `
         <div class="cpg-modal cpg-style-${comicStyle}">
             <div class="cpg-modal-header">
-                <h3>🎬 Comic generated</h3>
+                <h3>🖼️ Comic Panel Generator</h3>
                 <span class="cpg-close-btn" id="cpg_close_btn">✖</span>
             </div>
             <div class="cpg-page" id="cpg_page">

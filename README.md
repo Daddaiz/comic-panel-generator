@@ -28,8 +28,3 @@ A SillyTavern extension that turns the latest message in your chat into a comic 
 - **Character & Persona References** — uses character/persona avatars as image references to keep faces consistent. "Use last generated panel as extra reference" and "Keep first generated image as a permanent reference" further improve consistency across panels and across the whole conversation.
 - **Include clothing & art style in prompt text** — off by default; turn on if you want clothing/style spelled out in text instead of relying only on reference images.
 - **Custom / local providers** — under Image Provider, you can connect any other HTTP image API (including local tools like a Fooocus-API server) by filling in its request template.
-
-## Troubleshooting
-
-- Nothing shows up after installing → fully restart SillyTavern (not just the browser page).
-- Check the browser Console (F12) for `[Comic Panel Generator]` log lines — most errors are logged there with details.
