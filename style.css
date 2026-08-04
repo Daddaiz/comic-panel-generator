@@ -292,6 +292,45 @@
     opacity: 1;
 }
 
+.cpg-prompts-section {
+    margin-top: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 6px;
+    padding: 0 10px;
+}
+.cpg-prompts-section[open] {
+    padding-bottom: 10px;
+}
+.cpg-prompts-section > summary {
+    cursor: pointer;
+    padding: 8px 2px;
+    font-weight: 600;
+    opacity: 0.9;
+}
+.cpg-prompt-item {
+    border-top: 1px dashed rgba(255, 255, 255, 0.12);
+    padding: 4px 0;
+}
+.cpg-prompt-item > summary {
+    cursor: pointer;
+    font-size: 0.85em;
+    opacity: 0.85;
+    padding: 3px 0;
+}
+.cpg-prompt-edit {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: 0.78em;
+    margin-top: 4px;
+}
+#cpg_negprompt_edit {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: 0.78em;
+}
+
 /* Comic "page": paper-like background, outer frame, so that when we
    export it as a single image it really looks like a comic page */
 .cpg-page {

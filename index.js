@@ -2499,6 +2499,14 @@ function openOverlay(numPanels, comicStyle) {
             <div class="cpg-page" id="cpg_page">
                 <div class="cpg-grid" id="cpg_grid" style="grid-template-columns: repeat(${columns}, 1fr);"></div>
             </div>
+            <details class="cpg-prompts-section">
+                <summary>📝 Prompts used (click to expand — edit and retry a panel to use your changes)</summary>
+                <div id="cpg_prompts_list"></div>
+                <div style="margin-top:10px;">
+                    <label for="cpg_negprompt_edit" style="display:block; font-size:0.85em; opacity:0.85; margin-bottom:4px;">Negative prompt (shared by all panels)</label>
+                    <textarea id="cpg_negprompt_edit" rows="2"></textarea>
+                </div>
+            </details>
             <div class="cpg-buttons">
                 <button id="cpg_insert_now_btn" class="menu_button" disabled title="Available once all panels have finished generating">📩 Insert</button>
                 <button id="cpg_export_btn" class="menu_button" disabled title="Available once all panels have finished generating">💾 Export</button>
@@ -2858,7 +2866,18 @@ function attachRetryButton(panelEl, index, panels, results, references, promptIn
         e.stopPropagation();
         panelEl.className = "cpg-panel cpg-loading";
         panelEl.textContent = `Regenerating panel ${index + 1}...`;
-        await generateAndRenderPanel(panelEl, index, panels, results, references, promptInfos, negativePromptOverride);
+
+        // Read the negative prompt fresh from its (possibly edited) shared
+        // textarea in the "Prompts used" section, instead of the value that
+        // was current back when this button was first attached — this is
+        // what lets an edit made after the fact actually apply on retry.
+        // The positive prompt doesn't need this: promptInfos[index] is the
+        // same array/object edited in place by that section's own textarea,
+        // and generateAndRenderPanel always reads it fresh anyway.
+        const negPromptEditEl = document.getElementById("cpg_negprompt_edit");
+        const currentNegativePrompt = negPromptEditEl ? negPromptEditEl.value : negativePromptOverride;
+
+        await generateAndRenderPanel(panelEl, index, panels, results, references, promptInfos, currentNegativePrompt);
 
         // If this is the first panel and it's serving as this conversation's
         // permanent reference anchor, a retry replaces the OLD image on
@@ -3230,23 +3249,28 @@ async function prepareGeneratedImageAsReference(rawUrl, label) {
     }
 }
 
-// Adds an extra reference on top of the current list, respecting the
-// model's max-references limit: uses free room if there is any, otherwise
-// trades away the lowest-priority existing reference (unless the model
-// only supports 1 total, in which case the extra is skipped rather than
-// displacing the character/persona reference). Shared logic for both the
-// "first panel of this conversation" and "last generated panel" features.
-function addExtraReferenceWithTradeoff(currentRefs, maxRefs, extraRef, label, panelIndex) {
+// Adds an extra "bonus" reference (first-panel-of-conversation or last-
+// generated-panel continuity) on top of the current list, respecting the
+// model's max-references limit. Character/persona references — the first
+// `protectedCount` entries — are NEVER evicted to make room for a bonus
+// one: if a real character/persona avatar occupied that slot, it would
+// otherwise get silently dropped, degrading that specific character's
+// consistency (this is exactly what was happening whenever the number of
+// character/persona references already filled all available slots — e.g.
+// 3 people with a model that only accepts 3 references). Only an existing
+// BONUS reference (from a previous, lower-priority call to this function)
+// can be traded away for a new one.
+function addExtraReferenceWithTradeoff(currentRefs, maxRefs, extraRef, label, panelIndex, protectedCount) {
     if (!extraRef || maxRefs <= 0) return currentRefs;
     if (currentRefs.length < maxRefs) {
         console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: adding ${label} as an extra reference (slot ${currentRefs.length + 1}/${maxRefs}).`);
         return currentRefs.concat([extraRef]);
     }
-    if (maxRefs > 1) {
-        console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: reference limit (${maxRefs}) already full — trading the lowest-priority reference for ${label}.`);
+    if (maxRefs > protectedCount) {
+        console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: reference limit (${maxRefs}) already full — trading the most recent bonus reference for ${label} (character/persona references are never displaced).`);
         return currentRefs.slice(0, maxRefs - 1).concat([extraRef]);
     }
-    console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: model only supports 1 reference — keeping the existing one instead of swapping in ${label}.`);
+    console.log(`[Comic Panel Generator] Panel ${panelIndex + 1}: no room for ${label} without displacing a character/persona reference — skipped to protect character consistency.`);
     return currentRefs;
 }
 
@@ -3313,6 +3337,37 @@ async function onGenerateClick() {
     const results = [];
     let lastGeneratedForReference = null;
 
+    // Fill in the "Prompts used" section right away (before generation even
+    // starts) so the exact text can be checked or tweaked at any point —
+    // during generation or after — without losing any panel that's already
+    // been generated. Editing a panel's textarea here directly mutates
+    // `promptInfos[i].prompt`, which generateAndRenderPanel always reads
+    // fresh — so a retry (🔁) on that panel automatically picks up the
+    // edit. The negative prompt textarea is read directly by the retry
+    // handler at click time for the same reason.
+    const promptsListEl = document.getElementById("cpg_prompts_list");
+    if (promptsListEl) {
+        promptsListEl.innerHTML = promptInfos
+            .map(
+                (info, i) => `
+                <details class="cpg-prompt-item">
+                    <summary>Prompt ${i + 1}</summary>
+                    <textarea class="cpg-prompt-edit" data-panel-index="${i}" rows="4">${escapeHtml(info.prompt)}</textarea>
+                </details>`
+            )
+            .join("");
+        promptsListEl.querySelectorAll(".cpg-prompt-edit").forEach((textarea) => {
+            textarea.addEventListener("input", () => {
+                const idx = parseInt(textarea.dataset.panelIndex, 10);
+                if (promptInfos[idx]) promptInfos[idx].prompt = textarea.value;
+            });
+        });
+    }
+    const negPromptEditEl = document.getElementById("cpg_negprompt_edit");
+    if (negPromptEditEl) {
+        negPromptEditEl.value = negativePromptToUse || "";
+    }
+
     // "First panel of this conversation" reference: loaded once at the
     // start (persisted per-chat, so it survives across separate "Generate
     // comic" runs, not just within this one), used as an extra consistency
@@ -3332,11 +3387,12 @@ async function onGenerateClick() {
         results.push(null); // placeholder, filled inside generateAndRenderPanel
 
         let referencesForPanel = baseReferences;
+        const protectedCount = baseReferences.length;
         if (s.useFirstPanelAsReference && firstPanelReference && maxRefs > 0) {
-            referencesForPanel = addExtraReferenceWithTradeoff(referencesForPanel, maxRefs, firstPanelReference, "this conversation's first-panel reference", i);
+            referencesForPanel = addExtraReferenceWithTradeoff(referencesForPanel, maxRefs, firstPanelReference, "this conversation's first-panel reference", i, protectedCount);
         }
         if (s.useLastPanelAsReference && lastGeneratedForReference && maxRefs > 0) {
-            referencesForPanel = addExtraReferenceWithTradeoff(referencesForPanel, maxRefs, lastGeneratedForReference, "the previous panel's image", i);
+            referencesForPanel = addExtraReferenceWithTradeoff(referencesForPanel, maxRefs, lastGeneratedForReference, "the previous panel's image", i, protectedCount);
         }
 
         await generateAndRenderPanel(panelEl, i, panels, results, referencesForPanel, promptInfos, negativePromptToUse);
