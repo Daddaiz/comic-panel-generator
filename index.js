@@ -1110,16 +1110,21 @@ function naiveSplit(text, numPanels) {
 }
 
 // ------------------------------------------------------------------
-// Shared per-model endpoint metadata (single source of truth), fetched
-// once per model from GET /api/v1/images/models/{modelId}/endpoints —
-// this is where NanoGPT declares each model's real constraints:
-// input_reference_constraints (max reference images), and per-model
-// supported_parameters like resolution options, num_inference_steps
-// (Steps) and guidance_scale (CFG Scale) with their own default/min/max
-// — these genuinely differ per model (e.g. Qwen Image defaults to CFG
-// 2.5 / 30 steps, WAI Illustrious SDXL to CFG 7.5 / 20 steps), so we
-// read them from NanoGPT itself instead of hardcoding one model's values.
-// https://docs.nano-gpt.com/api-reference/image-generation
+// Shared per-model endpoint metadata, fetched once per model from
+// GET /api/v1/images/models/{modelId}/endpoints — CONFIRMED real and
+// officially documented:
+// https://docs.nano-gpt.com/api-reference/endpoint/image-api-model-endpoints
+// This describes each model's parameters for NanoGPT's documented
+// "dedicated Image API" (POST /api/v1/images: input_references, n,
+// resolution) — a DIFFERENT, separate vocabulary from the special
+// /api/v1/images/generations route that Qwen/Seedream use (nImages,
+// imageDataUrls, wan27_*), which their own website's UI happens to call
+// directly. That's why this metadata can't be used to guess whether an
+// unverified model needs the special route — it only ever describes the
+// documented one. Used here for: max reference count
+// (input_reference_constraints.max_items) and Steps/CFG defaults for
+// unverified models, purely as informational/UI data — NOT to decide
+// which generation route/format to use (see usesStructuredGenerationFormat).
 // ------------------------------------------------------------------
 
 // ------------------------------------------------------------------
@@ -1238,35 +1243,40 @@ async function getMaxReferencesForModel(modelId) {
     }
 
     const endpoint = await fetchModelEndpointMetadata(modelId);
-    // Real field name confirmed as "inputImageConstraints" against two
-    // separate verified specs (Qwen Image and Seedream 5.0 Pro) — this
-    // fallback previously read the wrong name ("input_reference_constraints"),
-    // so it never actually matched anything even when this lookup did work.
-    const maxItems = endpoint?.inputImageConstraints?.max_items;
+    // Field name confirmed directly from NanoGPT's own official docs for
+    // this endpoint (GET /api/v1/images/models/{id}/endpoints):
+    // https://docs.nano-gpt.com/api-reference/endpoint/image-api-model-endpoints
+    // — "input_reference_constraints.max_items". (A DIFFERENT field name,
+    // "inputImageConstraints", appears in the separate export/spec format
+    // NanoGPT's own website generates when you click "API" on the image
+    // generation page — that's an unrelated, undocumented internal format
+    // used for models in KNOWN_MODEL_CONFIGS above, not this live endpoint.)
+    const maxItems = endpoint?.input_reference_constraints?.max_items;
     const resolved = typeof maxItems === "number" && maxItems > 0 ? maxItems : DEFAULT_MAX_INPUT_REFERENCES;
-    console.log(`[Comic Panel Generator] input_references limit for "${modelId}" (unverified fallback lookup): ${resolved}`);
+    console.log(`[Comic Panel Generator] input_references limit for "${modelId}" (from documented /endpoints lookup): ${resolved}`);
     return resolved;
 }
 
-// Whether this model uses the "structured" generation endpoint/params
-// (imageDataUrl(s), nImages, resolution, showExplicitContent...) as
-// verified directly against NanoGPT's own API export — confirmed for both
-// Qwen Image and Seedream 5.0 Pro, by the person using this extension,
-// against NanoGPT's own site. Every model in KNOWN_MODEL_CONFIGS uses this
-// endpoint, so matching one there is treated as authoritative and checked
-// FIRST, regardless of what the live metadata lookup below concludes —
-// that lookup hits an endpoint whose existence/shape was never actually
-// confirmed against a live response, only assumed from general REST
-// conventions. The metadata lookup remains useful as a best-effort way to
-// *additionally* detect other, not-yet-verified models exposed the same
-// way, just not as the deciding vote for anything already verified.
+// Whether this model uses the special "structured" generation endpoint
+// (POST /api/v1/images/generations with imageDataUrl(s), nImages,
+// showExplicitContent, model-specific quirks like Qwen's wan27_* fields)
+// — confirmed, model by model, directly against NanoGPT's own site for
+// each entry in KNOWN_MODEL_CONFIGS. Every other model uses the separate,
+// OFFICIALLY DOCUMENTED "dedicated Image API"
+// (https://docs.nano-gpt.com/api-reference/image-generation): POST
+// /api/v1/images with input_references, n, resolution — a different
+// vocabulary entirely. Earlier versions of this code tried to guess which
+// route an unverified model needed by inspecting that documented API's
+// own discovery endpoint (GET /api/v1/images/models/{id}/endpoints) for
+// imageDataUrl(s)/nImages parameter names — but that endpoint describes
+// the DOCUMENTED /api/v1/images route's own parameters (which are named
+// "n", not "nImages", per NanoGPT's own docs), not the special
+// /generations route's, so that check could never actually succeed. Since
+// there's no reliable way to auto-detect which undocumented route an
+// unverified model needs, unverified models now always use the
+// documented, stable route instead of guessing.
 async function usesStructuredGenerationFormat(modelId) {
-    if (getKnownModelConfig(modelId)) return true;
-
-    const endpoint = await fetchModelEndpointMetadata(modelId);
-    if (!endpoint) return false;
-    const paramNames = endpoint?.supported_parameters ? Object.keys(endpoint.supported_parameters) : [];
-    return paramNames.includes("imageDataUrl") || paramNames.includes("imageDataUrls") || paramNames.includes("nImages");
+    return !!getKnownModelConfig(modelId);
 }
 
 // Reads this model's own declared Steps/CFG Scale default+range (plus
@@ -1924,11 +1934,6 @@ async function onPreviewReferencesClick() {
 // Doc: https://docs.nano-gpt.com/api-reference/image-generation
 // ------------------------------------------------------------------
 
-// Fallback resolution list, used only when a model's own metadata doesn't
-// declare its supported resolutions (verified directly for Qwen Image;
-// used as a generic fallback for other "structured-format" models too).
-const FALLBACK_STRUCTURED_RESOLUTIONS = ["auto", "1024x1024", "512x512", "768x1024", "576x1024", "1024x768", "1024x576"];
-
 // Maps each resolution NanoGPT documents for Qwen Image (and shares as a
 // fallback for other "structured" models) to the aspect_ratio string their
 // own request examples always include alongside it — same aspect labels
@@ -2162,22 +2167,11 @@ async function generateImageViaNanoGPT(prompt, references, negativePromptOverrid
         // this instead of assuming every model matches Qwen's shape.
         url = "https://nano-gpt.com/api/v1/images/generations";
 
+        // Always present here: usesStructuredGenerationFormat() only
+        // returns true for models in KNOWN_MODEL_CONFIGS (see above).
         const known = getKnownModelConfig(s.model);
-        let validResolutions, resolutionFormat;
-        if (known) {
-            validResolutions = known.resolutionOptions;
-            resolutionFormat = known.resolutionFormat;
-        } else {
-            // Unverified model using the structured format via the best-effort
-            // metadata lookup — assume Qwen's pixel-dimension shape, the most
-            // common one confirmed so far.
-            const endpoint = await fetchModelEndpointMetadata(s.model);
-            const resolutionOptions = endpoint?.supported_parameters?.resolution?.options;
-            validResolutions = Array.isArray(resolutionOptions) && resolutionOptions.length > 0
-                ? resolutionOptions.map((o) => o.value)
-                : FALLBACK_STRUCTURED_RESOLUTIONS;
-            resolutionFormat = "pixels";
-        }
+        const validResolutions = known.resolutionOptions;
+        const resolutionFormat = known.resolutionFormat;
 
         const resolution = resolutionFormat === "aspect-ratio"
             ? pixelSizeToClosestAspectRatioString(s.imageSize, validResolutions)
@@ -2197,12 +2191,12 @@ async function generateImageViaNanoGPT(prompt, references, negativePromptOverrid
         // for unverified models, assumed by default) to support — sending a
         // field a model's spec never declares is harmless in most APIs, but
         // there's no reason to guess when we have real confirmation either way.
-        const supportsAspectRatioField = known ? known.supportsAspectRatioField : true;
-        const supportsGuidanceScale = known ? known.supportsGuidanceScale : true;
-        const supportsInferenceSteps = known ? known.supportsInferenceSteps : true;
-        const supportsNegativePrompt = known ? known.supportsNegativePrompt : true;
-        const supportsWan27Fields = known ? known.supportsWan27Fields : false;
-        const supportsSafetyCheckerField = known ? known.supportsSafetyCheckerField : true;
+        const supportsAspectRatioField = known.supportsAspectRatioField;
+        const supportsGuidanceScale = known.supportsGuidanceScale;
+        const supportsInferenceSteps = known.supportsInferenceSteps;
+        const supportsNegativePrompt = known.supportsNegativePrompt;
+        const supportsWan27Fields = known.supportsWan27Fields;
+        const supportsSafetyCheckerField = known.supportsSafetyCheckerField;
 
         if (resolutionFormat === "pixels") {
             body.resolutionExplicit = true;
