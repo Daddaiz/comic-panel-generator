@@ -52,6 +52,10 @@ const QUALITY_NEGATIVE_PROMPT =
 //  - subject should come first, environment/lighting after
 //  - keep it concise, don't let it sprawl
 //  - "golden config" recommended by the guide: CFG 4.5 + 50 inference steps
+//    (superseded by NanoGPT's own verified platform default, see below)
+//  - locking one random seed across a whole series of related images gives
+//    a more consistent overall look than a fresh random seed per image —
+//    see "useSameSeedForComic" setting
 function isQwenModel(modelId) {
     return /qwen/i.test(modelId || "");
 }
@@ -79,6 +83,7 @@ const defaultSettings = {
     useCharacterAvatars: true,
     useLastPanelAsReference: true,
     useFirstPanelAsReference: false,
+    useSameSeedForComic: false,
     firstReferenceByChat: {}, // { [chatId]: dataUrl } — the very first generated image of each conversation
     perModelGenerationParams: {}, // { [modelId]: { steps, cfg } }
     activeProviderId: "nanogpt", // "nanogpt" | one of customProviders[].id
@@ -388,6 +393,20 @@ function buildSettingsHtml() {
                             <span style="font-size:0.75em; opacity:0.7; display:block; margin-top:4px;">
                                 From the 2nd panel onward, adds the previous panel's image as an extra reference to
                                 help keep the art consistent panel-to-panel.
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="cpg-row" style="align-items:flex-start;">
+                        <label for="cpg_same_seed">Use the same random seed for every panel</label>
+                        <div style="flex:1;">
+                            <input id="cpg_same_seed" type="checkbox" ${s.useSameSeedForComic ? "checked" : ""} />
+                            <span style="font-size:0.75em; opacity:0.7; display:block; margin-top:4px;">
+                                A random seed is picked once per comic and reused for every panel, instead of each
+                                panel getting its own random one — tends to give a more consistent overall look
+                                (lighting, color grading, rendering "feel") across the strip, per community
+                                testing. Off by default: locking the seed can also make very different scenes look
+                                more visually similar than intended, so it's worth trying both ways.
                             </span>
                         </div>
                     </div>
@@ -816,6 +835,10 @@ function bindSettingsEvents() {
     });
     document.getElementById("cpg_use_last_panel").addEventListener("change", (e) => {
         s.useLastPanelAsReference = e.target.checked;
+        saveSettingsDebounced();
+    });
+    document.getElementById("cpg_same_seed").addEventListener("change", (e) => {
+        s.useSameSeedForComic = e.target.checked;
         saveSettingsDebounced();
     });
     document.getElementById("cpg_use_first_panel").addEventListener("change", (e) => {
@@ -1928,13 +1951,13 @@ const FOOOCUS_API_TEMPLATE = {
     supportsReferences: true,
 };
 
-async function generateImage(prompt, references, negativePromptOverride) {
+async function generateImage(prompt, references, negativePromptOverride, seed) {
     const s = settings();
     const customProvider = getActiveCustomProvider(s);
     if (customProvider) {
-        return await generateImageViaCustomProvider(prompt, references, negativePromptOverride, customProvider);
+        return await generateImageViaCustomProvider(prompt, references, negativePromptOverride, customProvider, seed);
     }
-    return await generateImageViaNanoGPT(prompt, references, negativePromptOverride);
+    return await generateImageViaNanoGPT(prompt, references, negativePromptOverride, seed);
 }
 
 // ------------------------------------------------------------------
@@ -1943,7 +1966,7 @@ async function generateImage(prompt, references, negativePromptOverride) {
 // configured response path. Synchronous request/response APIs only.
 // ------------------------------------------------------------------
 
-async function generateImageViaCustomProvider(prompt, references, negativePromptOverride, provider) {
+async function generateImageViaCustomProvider(prompt, references, negativePromptOverride, provider, seed) {
     const s = settings();
     const negativePrompt = negativePromptOverride !== undefined ? negativePromptOverride : buildNegativePrompt();
     // No NanoGPT-based defaults available for a custom provider — use a
@@ -1962,7 +1985,7 @@ async function generateImageViaCustomProvider(prompt, references, negativePrompt
         cfg,
         width,
         height,
-        seed: -1,
+        seed: typeof seed === "number" ? seed : -1,
         n: 1,
         nsfw: !!s.nsfw,
         has_references: hasRefs,
@@ -2010,7 +2033,7 @@ async function generateImageViaCustomProvider(prompt, references, negativePrompt
     return raw; // treated as a URL
 }
 
-async function generateImageViaNanoGPT(prompt, references, negativePromptOverride) {
+async function generateImageViaNanoGPT(prompt, references, negativePromptOverride, seed) {
     const s = settings();
     const hasRefs = Array.isArray(references) && references.length > 0;
     const negativePrompt = negativePromptOverride !== undefined ? negativePromptOverride : buildNegativePrompt();
@@ -2086,6 +2109,12 @@ async function generateImageViaNanoGPT(prompt, references, negativePromptOverrid
             wan27_has_video_input: false,
             wan27_has_reference_images: hasRefs,
         };
+        // Only set when the person has "use the same seed for every panel"
+        // on and we've been handed one — otherwise omitted entirely, which
+        // NanoGPT documents as meaning "fully random" (its own default).
+        if (typeof seed === "number") {
+            body.seed = seed;
+        }
         if (hasRefs) {
             // Up to the model's own declared max — see input_reference_constraints.
             body.imageDataUrls = references;
@@ -2121,7 +2150,7 @@ async function generateImageViaNanoGPT(prompt, references, negativePromptOverrid
         `[Comic Panel Generator] → POST ${url} | model: ${body.model} | references: ${hasRefs ? references.length : 0}\n` +
         `  prompt: ${body.prompt}\n` +
         `  negative_prompt: ${negativePrompt || "(none)"}` +
-        (useStructured ? `\n  structured format: CFG ${body.guidance_scale}, ${body.num_inference_steps} steps, resolution ${body.resolution}, aspect_ratio ${body.aspect_ratio}` : "\n  (generic/legacy format — no CFG/steps/aspect_ratio sent on this route)")
+        (useStructured ? `\n  structured format: CFG ${body.guidance_scale}, ${body.num_inference_steps} steps, resolution ${body.resolution}, aspect_ratio ${body.aspect_ratio}${typeof body.seed === "number" ? `, seed ${body.seed}` : ""}` : "\n  (generic/legacy format — no CFG/steps/aspect_ratio sent on this route)")
     );
     if (hasRefs) {
         // Explicit, separate log of the exact reference images actually
@@ -2875,7 +2904,7 @@ function fillPanelError(panel, index, errorMessage) {
     `;
 }
 
-function attachRetryButton(panelEl, index, panels, results, references, promptInfos, negativePromptOverride) {
+function attachRetryButton(panelEl, index, panels, results, references, promptInfos, negativePromptOverride, seed) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "cpg-retry-btn";
@@ -2896,7 +2925,7 @@ function attachRetryButton(panelEl, index, panels, results, references, promptIn
         const negPromptEditEl = document.getElementById("cpg_negprompt_edit");
         const currentNegativePrompt = negPromptEditEl ? negPromptEditEl.value : negativePromptOverride;
 
-        await generateAndRenderPanel(panelEl, index, panels, results, references, promptInfos, currentNegativePrompt);
+        await generateAndRenderPanel(panelEl, index, panels, results, references, promptInfos, currentNegativePrompt, seed);
 
         // If this is the first panel and it's serving as this conversation's
         // permanent reference anchor, a retry replaces the OLD image on
@@ -3097,7 +3126,7 @@ async function buildAllPanelPromptInfos(panels) {
     return infos;
 }
 
-async function generateAndRenderPanel(panelEl, index, panels, results, references, promptInfos, negativePromptOverride) {
+async function generateAndRenderPanel(panelEl, index, panels, results, references, promptInfos, negativePromptOverride, seed) {
     const info = promptInfos[index];
     // Show the ACTUAL text sent to the image API in captions/chat export
     // (translated, if translation is on, and reflecting any manual edit
@@ -3107,7 +3136,7 @@ async function generateAndRenderPanel(panelEl, index, panels, results, reference
     // reader, not the image model.
     const panelDataForDisplay = { ...panels[index], visual: info.visualTextUsed };
     try {
-        const url = await generateImage(info.prompt, references, negativePromptOverride);
+        const url = await generateImage(info.prompt, references, negativePromptOverride, seed);
 
         fillPanelSuccess(panelEl, index, url, panelDataForDisplay, info.translationInfo);
         results[index] = { url, panelData: panelDataForDisplay };
@@ -3356,6 +3385,17 @@ async function onGenerateClick() {
     const results = [];
     let lastGeneratedForReference = null;
 
+    // Picked once per comic (not per panel) when "use the same seed for
+    // every panel" is on, per community-tested advice that locking a seed
+    // across a related series of images gives a more consistent overall
+    // rendering feel (lighting, color grading) than letting every panel
+    // roll a fully independent random one. Left undefined (full random,
+    // NanoGPT's own default) when the setting is off.
+    const sharedSeed = s.useSameSeedForComic ? Math.floor(Math.random() * 2147483647) : undefined;
+    if (typeof sharedSeed === "number") {
+        console.log(`[Comic Panel Generator] Using the same seed (${sharedSeed}) for every panel in this comic.`);
+    }
+
     // Fill in the "Prompts used" section right away (before generation even
     // starts) so the exact text can be checked or tweaked at any point —
     // during generation or after — without losing any panel that's already
@@ -3414,7 +3454,7 @@ async function onGenerateClick() {
             referencesForPanel = addExtraReferenceWithTradeoff(referencesForPanel, maxRefs, lastGeneratedForReference, "the previous panel's image", i, protectedCount);
         }
 
-        await generateAndRenderPanel(panelEl, i, panels, results, referencesForPanel, promptInfos, negativePromptToUse);
+        await generateAndRenderPanel(panelEl, i, panels, results, referencesForPanel, promptInfos, negativePromptToUse, sharedSeed);
         setStatus(`Panel ${i + 1}/${panels.length} completed.`);
 
         if (results[i] && results[i].url) {
