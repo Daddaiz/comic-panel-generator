@@ -1365,6 +1365,25 @@ function getRecentSpeakingCharacterNames(maxCount) {
         seenNames.push(context.name2);
     }
 
+    // IMPORTANT: the order returned here becomes the order reference images
+    // are sent in (see getCharacterAvatarEntries), and since NanoGPT's API
+    // has no way to label which image is which character, the model's only
+    // way to associate "this image = this described character" is likely
+    // position/order. Collecting names by "who spoke most recently" (above)
+    // is order-UNSTABLE — it naturally changes from one comic generation to
+    // the next depending on where you are in the conversation, which could
+    // easily cause exactly this kind of mix-up (a character sometimes
+    // rendered wearing another character's clothes). Sorting into a FIXED
+    // order here — each character's own position in SillyTavern's character
+    // list, which never changes — means the same character always lands in
+    // the same reference slot across every comic generated in this chat.
+    const allCharacters = context.characters || [];
+    seenNames.sort((a, b) => {
+        const idxA = allCharacters.findIndex((c) => c && c.name === a);
+        const idxB = allCharacters.findIndex((c) => c && c.name === b);
+        return idxA - idxB;
+    });
+
     return seenNames;
 }
 
